@@ -23,7 +23,9 @@
 #define PHASE_B		(PINB & 1<<4)
 #define RE_BTN          (PINB & 1<<5)
 #define STANDBY_BTN     (PINB & 1<<0)
-#define TEST_BTN        (PINB & 1<<2)
+//#define TEST_BTN        (PINB & 1<<2)  // NAV-PANEL
+#define TEST_BTN        (PINC & 1<<0)  // COMM-PANEL
+#define DEBUG         1
 
 // The AVR can be waken up by a TWI address match from all sleep modes,
 // But it only wakes up from other TWI interrupts when in idle mode.
@@ -35,6 +37,7 @@
 
 // TWI variables: 
 static volatile int8_t buffer_data[] = { 0, 0, 0 };
+static volatile int8_t buffer_data_new[] = { 0, 0, 0 };
 static volatile int8_t buffer_data_master[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
 static volatile int8_t ssd_idx[] = { 8, 6, 1, 3, 2, 9, 7, 5, 0, 4 };
 static volatile uint8_t twiTransmitSuccess = 0;
@@ -114,76 +117,80 @@ void peripheral_init(void)
 	SREG |= (1 << 7); //Enable Interrupts globally
 }
 
-void UART_send(char *text, int number) {
-	char str[10];
-	while (*text) //End of string = 0
-	{
-		while (!(UCSRA & (1 << UDRE))) // Wait until Buffer is empty - ready to send.
+void UART_send(char *text, int number, int linefeed) {
+	if (DEBUG) {
+		char str[10];
+		while (*text) //End of string = 0
 		{
+			while (!(UCSRA & (1 << UDRE))) // Wait until Buffer is empty - ready to send.
+			{
+			}
+			UDR = *text;
+			text++;
 		}
-		UDR = *text;
-		text++;
-	}
-	itoa(number, str, 10);
-	text = &str[0];
-	while (*text) //End of string = 0
-	{
-		while (!(UCSRA & (1 << UDRE))) // Wait until Buffer is empty - ready to send.
+		itoa(number, str, 10);
+		text = &str[0];
+		while (*text) //End of string = 0
 		{
+			while (!(UCSRA & (1 << UDRE))) // Wait until Buffer is empty - ready to send.
+			{
+			}
+			UDR = *text;
+			text++;
 		}
-		UDR = *text;
-		text++;
+		if (linefeed) {
+			//Next line in the terminal:
+			while (!(UCSRA & (1 << UDRE))) // Wait until Buffer is empty - ready to send.
+			{
+			}
+	//		UDR = 0x0D; //Carriage Return
+	//		while (!(UCSRA & (1 << UDRE))) // Wait until Buffer is empty - ready to send.
+	//		{
+	//		}
+			UDR = 0x0A; //Line Feed
+		}
 	}
-
-	//Next line in the terminal:
-	while (!(UCSRA & (1 << UDRE))) // Wait until Buffer is empty - ready to send.
-	{
-	}
-	UDR = 0x0D; //Carriage Return
-	while (!(UCSRA & (1 << UDRE))) // Wait until Buffer is empty - ready to send.
-	{
-	}
-	UDR = 0x0A; //Line Feed
 }
 
 void twi_action(unsigned char rw_status) {
 	if (rw_status) {
-		//UART_send("TWI WRITE ", rw_status);
+		UART_send("TWI WRITE ", rw_status, 0);
 		uint8_t a = buffer_data_master[0] * 100 + buffer_data_master[1] * 10
 				+ buffer_data_master[2];
 		uint8_t b = buffer_data_master[3] * 10 + buffer_data_master[4];
-//		UART_send("a- ", a);
-//		UART_send("b- ", b);
+		UART_send("a- ", a, 0);
+		UART_send("b- ", b, 0);
 		uint8_t c = buffer_data_master[5] * 100 + buffer_data_master[6] * 10
 				+ buffer_data_master[7];
 		uint8_t d = buffer_data_master[8] * 10 + buffer_data_master[9];
-//		UART_send("c- ", c);
-//		UART_send("d- ", d);
+		UART_send("c- ", c, 0);
+		UART_send("d- ", d, 1);
 	} else {
 		if (reBtn_state == 1) {
 			buffer_data[2] = encoder_change;
 		} else {
 			buffer_data[2] = encoder_change * 16;
 		}
+		buffer_data[0] = buffer_data_new[0];
+		buffer_data[1] = buffer_data_new[1];
 		encoder_change = 0;
-//		UART_send("TWI READ ", buffer_data[0]);
-//		UART_send("- ", buffer_data[0]);
-//		UART_send("- ", buffer_data[1]);
-//		UART_send("- ", buffer_data[2]);
+		UART_send("TWI READ ", buffer_data[0], 0);
+		UART_send("", buffer_data[1], 0);
+		UART_send("", buffer_data[2], 1);
 	}
 }
 
 void processTestButton(void) {
 	testBtnCounter++;
 	if (!TEST_BTN) {
-		if (testBtnCounter > 1000) {
+		if (testBtnCounter > 100) {
 			testBtnCounter = 0;
-			buffer_data[1] |= 0x01;
+			buffer_data_new[1] |= 0x01;
 		}
 	} else {
-		if (testBtnCounter > 1000) {
+		if (testBtnCounter > 100) {
 			testBtnCounter = 0;
-			buffer_data[1] &= 0xFE;
+			buffer_data_new[1] &= 0xFE;
 		}
 	}
 }
@@ -191,14 +198,14 @@ void processTestButton(void) {
 void processStandbyButton(void) {
 	standbyBtnCounter++;
 	if (!STANDBY_BTN) {
-		if (standbyBtnCounter > 1000) {
+		if (standbyBtnCounter > 100) {
 			standbyBtnCounter = 0;
-			buffer_data[0] |= 0x01;
+			buffer_data_new[0] |= 0x01;
 		}
 	} else {
-		if (standbyBtnCounter > 1000) {
+		if (standbyBtnCounter > 100) {
 			standbyBtnCounter = 0;
-			buffer_data[0] &= 0xFE;
+			buffer_data_new[0] &= 0xFE;
 		}
 	}
 }
@@ -206,14 +213,14 @@ void processStandbyButton(void) {
 void processRotaryEncoder(void) {
 	reCounter++;
 	if (!RE_BTN) {
-		if (reCounter > 1000) {
+		if (reCounter > 100) {
 			reCounter = 0;
-			buffer_data[1] |= 0x01;
+			buffer_data_new[1] |= 0x02;
 		}
 	} else {
-		if (reCounter > 1000) {
+		if (reCounter > 100) {
 			reCounter = 0;
-			buffer_data[1] &= 0xFE;
+			buffer_data_new[1] &= 0xFD;
 		}
 	}
 }
@@ -298,17 +305,17 @@ ISR( TWI_vect)
 
 	switch (TW_STATUS) {
 	case TW_SR_SLA_ACK:
-//       UART_send("SR_SLA_ACK ", TW_STATUS);
+        //UART_send("SR_SLA_ACK ", TW_STATUS, 1);
 		i2c_state = 0;
 		TWCR_ACK
 		break;
 	case TW_SR_DATA_ACK:
-//       UART_send("SR_DATA_ACK ", TWDR);
+        //UART_send("SR_DATA_ACK ", TWDR, 1);
 		buffer_data_master[i2c_state++] = TWDR;
 		TWCR_ACK
 		break;
 	case TW_SR_STOP:
-//       UART_send("SR_STOP ", TW_STATUS);
+        //UART_send("SR_STOP ", TW_STATUS, 1);
 		if (i2c_state >= 10) {
 			twiReceiveSuccess = 1;
 			twi_action(1);
@@ -318,18 +325,18 @@ ISR( TWI_vect)
 		break;
 		// Slave Transmitter Mode
 	case TW_ST_SLA_ACK:
-//       UART_send("ST_SLA_ACK ", TW_STATUS);
+        //UART_send("ST_SLA_ACK ", TW_STATUS, 1);
 		twi_action(0);
 		i2c_state_transmit = 0;
 		TWCR_ACK
 		break;
 	case TW_ST_DATA_ACK:
-//       UART_send("ST_DATA_ACK ", buffer_data[i2c_state_transmit]);
+        //UART_send("ST_DATA_ACK ", buffer_data[i2c_state_transmit], 1);
 		TWDR = buffer_data[i2c_state_transmit++];
 		TWCR_ACK
 		break;
 	case TW_ST_DATA_NACK:
-//       UART_send("ST_DATA_NACK ", buffer_data[i2c_state_transmit++]);
+        //UART_send("ST_DATA_NACK ", buffer_data[i2c_state_transmit++], 1);
 		TWDR = buffer_data[i2c_state_transmit++];
 		if (i2c_state_transmit >= 3) {
 			twiTransmitSuccess = 1;
@@ -338,13 +345,13 @@ ISR( TWI_vect)
 		TWCR_ACK
 		break;
 	case TW_ST_LAST_DATA:
-		UART_send("ST_LAST_DATA ", 0);
+ 		//UART_send("ST_LAST_DATA ", 0, 1);
 	case TW_BUS_ERROR:
 		loopCount++;
-//		UART_send("BUS_A ", TWAR);
-//		UART_send("BUS_S ", TW_STATUS);
-//		UART_send("BUS_D ", TWDR);
-//		UART_send("BUS_E ", TWCR);
+ 		UART_send("BUS_A ", TWAR, 1);
+ 		UART_send("BUS_S ", TW_STATUS, 1);
+ 		UART_send("BUS_D ", TWDR, 1);
+ 		UART_send("BUS_E ", TWCR, 1);
 		PORTB = TWCR;
 		TWRESET
 		//TWAR=(0x21);
@@ -354,7 +361,7 @@ ISR( TWI_vect)
 		i2c_state_transmit = 0;
 		break;
 	default:
-//		UART_send("XXXXXXXXXX ", TW_STATUS);
+ //		UART_send("XXXXXXXXXX ", TW_STATUS, 1);
 		;
 	}
 }
@@ -384,13 +391,15 @@ int main(void) {
 	cli();
 	IO_init();
 	TWI_slave_init((unsigned char) ((TWI_slaveAddress)) | (1 << TWI_GEN_BIT));
-	//peripheral_init();         // UART              
+	if (DEBUG) {
+		peripheral_init(); // UART              
+	}
 	Delay_ms(100);
 	sei();
 	// Start Transceiver
 	TWCR_ACK;
 
-//	UART_send("main loop entered: ", 0);
+	UART_send("main loop entered: ", 0, 1);
 
 	SET_BIT(PORTD, 5); // reset johnson counter
 	CLEAR_BIT(PORTD, 6);
@@ -399,7 +408,7 @@ int main(void) {
 	CLEAR_BIT(PORTD, 5); // reset johnson counter
 
 	// init bcd to 7 seg
-	PORTC &= 0b00001110;
+	PORTC &= 0b00001111;
 	PORTC |= 0b00001110;
 
 	while (1) {
@@ -410,6 +419,7 @@ int main(void) {
 		processTestButton();
 		processRotaryEncoder();
 		processStandbyButton();
+
 
 		segmentCounter++;
 		if (segmentCounter == 5) {
