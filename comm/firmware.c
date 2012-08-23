@@ -25,7 +25,7 @@
 #define STANDBY_BTN     (PINB & 1<<0)
 //#define TEST_BTN        (PINB & 1<<2)  // NAV-PANEL
 #define TEST_BTN        (PINC & 1<<0)  // COMM-PANEL
-#define DEBUG         1
+#define DEBUG         0
 
 // The AVR can be waken up by a TWI address match from all sleep modes,
 // But it only wakes up from other TWI interrupts when in idle mode.
@@ -158,7 +158,7 @@ void twi_action(unsigned char rw_status) {
 		uint8_t a = buffer_data_master[0] * 100 + buffer_data_master[1] * 10
 				+ buffer_data_master[2];
 		uint8_t b = buffer_data_master[3] * 10 + buffer_data_master[4];
-		UART_send("a- ", a, 0);
+		UART_send(" a- ", a, 0);
 		UART_send("b- ", b, 0);
 		uint8_t c = buffer_data_master[5] * 100 + buffer_data_master[6] * 10
 				+ buffer_data_master[7];
