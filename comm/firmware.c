@@ -39,17 +39,17 @@
 static volatile int8_t buffer_data[] = { 0, 0, 0 };
 static volatile int8_t buffer_data_new[] = { 0, 0, 0 };
 static volatile int8_t buffer_data_master[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
-static volatile int8_t ssd_idx[] = { 8, 6, 1, 3, 2, 9, 7, 5, 0, 4 };
 static volatile uint8_t twiTransmitSuccess = 0;
 static volatile uint8_t twiReceiveSuccess = 0;
 static volatile uint8_t loopCount = 0;
 // Rotary Encoder
 static volatile int8_t enc_delta; // -128 ... 127
 static volatile int8_t last;
-static int8_t local_change = 0;
+static int8_t reBtn_state_toggle = 0;
 static int8_t reBtn_state = 0;
-static int8_t reBtn_state_blink = 0;
-static uint8_t encoder_change = 0;
+static int8_t encoder_change = 0;
+static volatile int8_t reIncrement = 0;
+static volatile int8_t reDecrement = 0;
 static uint32_t reCounter = 0;
 static uint16_t standbyBtnCounter = 0;
 static uint16_t testBtnCounter = 0;
@@ -95,6 +95,9 @@ void IO_init(void) //This procedure sets up the IO-pins of the ATmega32.
 	// PB1 OC1 Encoder Timer Interrupt
 	// PC7 PHASE A Input with pull-up
 	// PC6 PHASE B Input with pull-up
+	// PD5 = Johnson decade counter CP1 (HIGH-to-LOW, edge-triggered)
+	// PD6 = Johnson decade counter CP0 clock input (LOW-to-HIGH, edge-triggered)
+	// PD7 = Johnson decade counter MR (active high)
 	// Connect Rotary Encoder to Ground
 	encode_init();
 }
@@ -166,32 +169,27 @@ void twi_action(unsigned char rw_status) {
 		UART_send("c- ", c, 0);
 		UART_send("d- ", d, 1);
 	} else {
-		if (reBtn_state == 1) {
-			buffer_data[2] = encoder_change;
-		} else {
-			buffer_data[2] = encoder_change * 16;
-		}
 		buffer_data[0] = buffer_data_new[0];
-		buffer_data[1] = buffer_data_new[1];
-		encoder_change = 0;
+		buffer_data[1] = 0;
+		buffer_data[2] = 0;
+		if (reBtn_state == 1) {
+			if (reIncrement > 0) {
+				buffer_data[1] = reIncrement;
+			} else if (reDecrement > 0) {
+				buffer_data[1] = reDecrement*16;
+			}
+		} else {
+			if (reIncrement > 0) {
+				buffer_data[2] = reIncrement;
+			} else if (reDecrement > 0) {
+				buffer_data[2] = reDecrement*16;
+			}
+		}
+		reIncrement = 0; // reset
+		reDecrement = 0; // reset
 		UART_send("TWI READ ", buffer_data[0], 0);
 		UART_send("", buffer_data[1], 0);
 		UART_send("", buffer_data[2], 1);
-	}
-}
-
-void processTestButton(void) {
-	testBtnCounter++;
-	if (!TEST_BTN) {
-		if (testBtnCounter > 100) {
-			testBtnCounter = 0;
-			buffer_data_new[1] |= 0x01;
-		}
-	} else {
-		if (testBtnCounter > 100) {
-			testBtnCounter = 0;
-			buffer_data_new[1] &= 0xFE;
-		}
 	}
 }
 
@@ -210,92 +208,121 @@ void processStandbyButton(void) {
 	}
 }
 
+void processTestButton(void) {
+	testBtnCounter++;
+	if (!TEST_BTN) {
+		if (testBtnCounter > 100) {
+			testBtnCounter = 0;
+			buffer_data_new[0] |= 0x02;
+		}
+	} else {
+		if (testBtnCounter > 100) {
+			testBtnCounter = 0;
+			buffer_data_new[0] &= 0xFD;
+		}
+	}
+}
+
 void processRotaryEncoder(void) {
 	reCounter++;
 	if (!RE_BTN) {
 		if (reCounter > 100) {
 			reCounter = 0;
-			buffer_data_new[1] |= 0x02;
+			buffer_data_new[0] |= 0x04;
+			if (reBtn_state_toggle == 1) {
+				if (reBtn_state == 1) {
+					reBtn_state = 0;
+				} else {
+					reBtn_state = 1;
+				}
+				reBtn_state_toggle = 0;
+			}			
 		}
 	} else {
 		if (reCounter > 100) {
 			reCounter = 0;
-			buffer_data_new[1] &= 0xFD;
+			buffer_data_new[0] &= 0xFB;
+			reBtn_state_toggle = 1;
 		}
 	}
 }
 
 void Update7SegDisplay(uint8_t segmentIndex) {
-// static volatile int8_t ssd_idx[] = { 8, 6, 1, 3, 2, 9, 7, 5, 0, 4 };
+// 120.10 127.50 -> buffer_data_master[9] {1,2,0,1,0,1,2,7,5,0}
+// SegmentIndex :  0 1 2 3  4 5 6 7 8  9 (segmentIndex) = PANEL POSITION
+// JC Pin       :  3 2 4 7 10 1 5 6 9 11
+// Panel        :  2 3 1 6  8 4 0 5 7  9 (buffer[2] = segmentIndex/case)
+
+	// Disable 7Seg
+	CLEAR_BIT(PORTC, 2);
+	// PD5 = Johnson decade counter CP1 (HIGH-to-LOW, edge-triggered)
+	// PD6 = Johnson decade counter CP0 clock input (LOW-to-HIGH, edge-triggered)
+	// PD7 = Johnson decade counter MR (active high)
+	// inc johnson counter
+	SET_BIT(PORTD, 6);
+
 	switch (segmentIndex) {
 	case 0:
-		PORTC &= 0b11111011;
 		PORTD &= 0b11110000;
-		PORTD |= buffer_data_master[ssd_idx[4]];
+		PORTD |= buffer_data_master[2];
 		break;
 	case 1:
-		PORTC &= 0b11111011;
 		PORTD &= 0b11110000;
-		PORTD |= buffer_data_master[ssd_idx[3]];
+		PORTD |= buffer_data_master[3];
 		break;
 	case 2:
-		PORTC &= 0b11111011;
 		PORTD &= 0b11110000;
-		PORTD |= buffer_data_master[ssd_idx[2]];
+		PORTD |= buffer_data_master[1];
 		break;
 	case 3:
-		PORTC &= 0b11111011;
 		PORTD &= 0b11110000;
-		PORTD |= buffer_data_master[ssd_idx[1]];
+		PORTD |= buffer_data_master[6];
 		break;
 	case 4:
-		PORTC &= 0b11111011;
 		PORTD &= 0b11110000;
-		PORTD |= buffer_data_master[ssd_idx[0]];
+		PORTD |= buffer_data_master[8];
 		break;
 	case 5:
-		PORTC &= 0b11111011;
 		PORTD &= 0b11110000;
-		PORTD |= buffer_data_master[ssd_idx[9]];
+		PORTD |= buffer_data_master[4];
 		break;
 	case 6:
-		PORTC &= 0b11111011;
 		PORTD &= 0b11110000;
-		PORTD |= buffer_data_master[ssd_idx[8]];
+		PORTD |= buffer_data_master[0];
 		break;
 	case 7:
-		PORTC &= 0b11111011;
 		PORTD &= 0b11110000;
-		PORTD |= buffer_data_master[ssd_idx[7]];
+		PORTD |= buffer_data_master[5];
 		break;
 	case 8:
-		PORTC &= 0b11111011;
 		PORTD &= 0b11110000;
-		PORTD |= buffer_data_master[ssd_idx[6]];
+		PORTD |= buffer_data_master[7];
 		break;
 	case 9:
-		PORTC &= 0b11111011;
 		PORTD &= 0b11110000;
-		PORTD |= buffer_data_master[ssd_idx[5]];
+		PORTD |= buffer_data_master[9];
 		break;
 	default:
 		//PORTC  &= 0b11111111;
 		break;
 	}
 
-	if (segmentIndex == 0) {
-		SET_BIT(PORTD, 7); // reset johnson counter
-		CLEAR_BIT(PORTD, 7); // reset johnson counter
+	if (segmentIndex == 0 || segmentIndex == 8) { // Buffer[2] Buffer[7]
+		CLEAR_BIT(PORTC, 1);   // enable decimal point
 	} else {
-		if (segmentIndex < 9) {
-			SET_BIT(PORTD, 6); // inc johnson counter
-		}
+		SET_BIT(PORTC, 1); // disable decimal point
 	}
-	if (segmentIndex > 1) {
-		// before decimal point
-		SET_BIT(PORTC, 2); // Enable 7Seg
+	
+	if (!TEST_BTN) {
+		// ALL LEDs
+		PORTD &= 0b11110000;
+		PORTD |= 8;
+		// enable decimal point
+		CLEAR_BIT(PORTC, 1);
 	}
-	SET_BIT(PORTC, 2); // Enable 7Seg
+
+	// Enable 7Seg
+	SET_BIT(PORTC, 2);
 }
 
 ISR( TWI_vect)
@@ -401,21 +428,21 @@ int main(void) {
 
 	UART_send("main loop entered: ", 0, 1);
 
-	SET_BIT(PORTD, 5); // reset johnson counter
+	// PD5 = Johnson decade counter CP1 (HIGH-to-LOW, edge-triggered)
+	// PD6 = Johnson decade counter CP0 clock input (LOW-to-HIGH, edge-triggered)
+	// PD7 = Johnson decade counter MR (active high) CarryT = 0
+	CLEAR_BIT(PORTD, 5); 
 	CLEAR_BIT(PORTD, 6);
-	CLEAR_BIT(PORTD, 7);
+	SET_BIT(PORTD, 7);
 	Delay_ms(1);
-	CLEAR_BIT(PORTD, 5); // reset johnson counter
+	CLEAR_BIT(PORTD, 7); // JC: Master Reset
+	digit = 0;
 
 	// init bcd to 7 seg
 	PORTC &= 0b00001111;
 	PORTC |= 0b00001110;
 
 	while (1) {
-		if (digit > 9) {
-			digit = 0;
-		}
-
 		processTestButton();
 		processRotaryEncoder();
 		processStandbyButton();
@@ -423,23 +450,39 @@ int main(void) {
 
 		segmentCounter++;
 		if (segmentCounter == 5) {
-			if (digit == 0) {
-				CLEAR_BIT(PORTD, 6); // MR to High after Reset
+/*			if (digit == 0) {
+				CLEAR_BIT(PORTD, 7); // MR to High after Reset
 			}
-		} else if (segmentCounter == 10) {
+*/		} else if (segmentCounter == 10) {
 			// prepare johnson counter
-			TOOGLE_BIT(PORTD, 6);
+			CLEAR_BIT(PORTD, 6);
 		} else if (segmentCounter > 15) {
 			segmentCounter = 0;
+			if (digit == 9) {
+				digit = 0;
+			} else {
+				digit++;
+			}
 			Update7SegDisplay(digit);
-			digit++;
 		}
 
 		encoderCounter++;
 		if (encoderCounter > 100) {
-			encoder_change += encode_read4(); // read a two step encoder
+			encoder_change = encode_read4(); // read a two step encoder
+			if (encoder_change > 0) {
+				reIncrement += encoder_change;
+				if (reIncrement > 15) {
+					reIncrement = 15;
+				}
+				reDecrement = 0;
+			} else if (encoder_change < 0) {
+				reDecrement += abs(encoder_change);
+				if (reDecrement > 15) {
+					reDecrement = 15;
+				}
+				reIncrement = 0;
+			}
 			encoderCounter = 0;
-			local_change = 0;
 		}
 
 		/*		if (twiTransmitSuccess || twiReceiveSuccess) {
