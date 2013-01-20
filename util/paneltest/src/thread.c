@@ -38,28 +38,22 @@ void update_screen() {
 	int col = 0;
 	writeConsole(row, col, "Colomboard v1.0 - Press 'q' to quit.");
 	writeConsole(row + 1, col, "------------------------------------");
-	sprintf(cTmp, "%d app %5d usb %3d twi %3d", g_ptr_shared_data->thread_id,
+	sprintf(cTmp, "id %2d - app %5d - usb %3d - twi %3d", g_ptr_shared_data->thread_id,
 			g_counter % 10000, g_usb_data.usbCounter, g_usb_data.twiCounter);
 	writeConsole(row + 2, col, cTmp);
-	writeConsole(row + 4, col, "DataRef    board  driver  xplane");
+	sprintf(cTmp, "Buttons:  %02d %02d %02d %02d %02d",
+			g_usb_data.board0, g_usb_data.board1, g_usb_data.board2, g_usb_data.board3, g_usb_data.board4);
+	writeConsole(row + 3, col, cTmp);
+	writeConsole(row + 4, col, "Device:    value");
 	writeConsole(row + 5, col, "------------------------------------");
-	sprintf(cTmp, "comFreq:  %3d.%02d  %3d.%02d  %3d.%02d",
-			g_usb_data.board0, g_usb_data.board1, g_comFreq,
-			g_comFreqFraction, g_ptr_shared_data->comFreq,
-			g_ptr_shared_data->comFreqFraction);
-	writeConsole(row + 6, col, cTmp);
-	sprintf(cTmp, "comStby:  %3d.%02d  %3d.%02d  %3d.%02d",
-			g_usb_data.board2, g_usb_data.board0,
-			g_comFreqStandby, g_comFreqStandbyFraction,
-			g_ptr_shared_data->comFreqStandby,
+	sprintf(cTmp, "%1d:  %3d.%02d, %3d.%02d",
+			g_ptr_shared_data->selectedDevice, g_ptr_shared_data->comFreq,
+			g_ptr_shared_data->comFreqFraction, g_ptr_shared_data->comFreqStandby,
 			g_ptr_shared_data->comFreqStandbyFraction);
-	writeConsole(row + 7, col, cTmp);
-	sprintf(cTmp, "flaps:      %4d    %4d    %4d", g_usb_data.flapIndicator,
-			g_flapIndicator, g_ptr_shared_data->flapIndicator);
-	writeConsole(row + 8, col, cTmp);
+	writeConsole(row + 6, col, cTmp);
 	if (g_usb_data.usbCounter % 100 == 0) {
-		writeConsole(12, 0, "                                               ");
-		writeConsole(13, 0, "                                               ");
+		writeConsole(7, 0, "                                               ");
+		writeConsole(8, 0, "                                               ");
 	}
 
 }

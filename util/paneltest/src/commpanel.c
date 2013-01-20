@@ -54,7 +54,6 @@ int main(void) {
 
 	initConsole();
 
-
 	g_shared_data.thread_id = g_thread_id;
 	g_shared_data.stop = 0;
 	g_thread_return_code = pthread_create(&g_thread, NULL, run, (void *) &g_shared_data);
@@ -113,6 +112,16 @@ int main(void) {
 			g_shared_data.selectedDevice = 3;
 		} else if (character == '4') {
 			g_shared_data.selectedDevice = 4;
+		} else if (character == '5') {
+			g_shared_data.selectedDevice = 5;
+		} else if (character == '6') {
+			g_shared_data.selectedDevice = 6;
+		} else if (character == '7') {
+			g_shared_data.selectedDevice = 7;
+		} else if (character == '8') {
+			g_shared_data.selectedDevice = 8;
+		} else if (character == '9') {
+			g_shared_data.selectedDevice = 9;
 		} else {
 			g_shared_data.changed = 0;
 		}
